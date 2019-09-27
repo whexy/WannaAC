@@ -1,0 +1,72 @@
+#include <bits/stdc++.h>
+#define clr(x) memset(x, 0, sizeof(x))
+#define clrm1(x) memset(x, -1, sizeof(x))
+using namespace std;
+typedef long long LL;
+const int MAXN = 1e5 + 5;
+int n;
+struct node {
+    int fnt, nxt;
+    node(int _fnt = 0, int _nxt = 0) : fnt(_fnt), nxt(_nxt) {}
+} a[MAXN];
+
+void debug() {
+    // for (int i = 0; i < n; i++) {
+    //     cout << "i=" << i << " " << a[i].fnt << "," << a[i].nxt << "\n";
+    // }
+    // cout << "--------------\n\n";
+    return;
+}
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(0);
+    int T, m, prv, cnt, x1, y1, x2, y2;
+    cin >> T;
+    while (T--) {
+        cin >> n >> m;
+        cin >> cnt;
+        a[cnt].fnt = -1;
+        prv = cnt;
+        for (int i = 1; i < n; i++) {
+            cin >> cnt;
+            a[cnt].fnt = prv;
+            a[prv].nxt = cnt;
+            prv = cnt;
+        }
+        a[cnt].nxt = n;
+        debug();
+        for (int i = 0; i < m; i++) {
+            cin >> x1 >> y1 >> x2 >> y2;
+            if (a[y1].nxt == x2) {
+                a[a[x1].fnt].nxt = x2;
+                a[x2].fnt = a[x1].fnt;
+                a[x1].fnt = y2;
+                a[y1].nxt = a[y2].nxt;
+                a[a[y2].nxt].fnt = y1;
+                a[y2].nxt = x1;
+            } else {
+                a[a[x1].fnt].nxt = x2;
+                a[a[y1].nxt].fnt = y2;
+                a[a[x2].fnt].nxt = x1;
+                a[a[y2].nxt].fnt = y1;
+                swap(a[x2].fnt, a[x1].fnt);
+                swap(a[y2].nxt, a[y1].nxt);
+            }
+            debug();
+        }
+
+        for (int i = 0; i < n; i++) {
+            if (a[i].fnt == -1) {
+                cnt = i;
+                while (cnt != n) {
+                    cout << cnt << " ";
+                    cnt = a[cnt].nxt;
+                }
+                cout << "\n";
+                break;
+            }
+        }
+    }
+    return 0;
+}

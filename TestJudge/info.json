@@ -1,0 +1,6 @@
+{
+    "test": {
+        "title": "A + B Problem",
+        "timeout": 1
+    }
+}
