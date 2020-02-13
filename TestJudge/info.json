@@ -1,6 +1,10 @@
 {
     "test": {
         "title": "A + B Problem",
-        "timeout": 1
+        "timeout": 1,
+        "method": "diff",
+        "precision": 0,
+        "std_type": null,
+        "data_type": null
     }
 }
