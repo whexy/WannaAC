@@ -1,3 +1,5 @@
+TestJudge/run/*
+TestJudge/data/*
 *.bak
 *~
 .*.un~
