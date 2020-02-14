@@ -10,15 +10,21 @@ import shutil
 from difflib import SequenceMatcher
 
 test_config = {
-        'language': 'Java',
+        'language': 'java',
+        'probinfo': 'test',
+        'content': 'public class main{public static void main(string[] args){for(;;);}}'
+        }
+
+test_config_2 = {
+        'language': 'c++',
         'probInfo': 'test',
-        'content': 'public class Main{public static void main(String[] args){for(;;);}}'
+        'content': '#include <iostream>\n int main() { int a, b; std::cin >> a >> b; std::cout << a + b; return 0; }'
         }
 
 file_type_list = {
-        'C++': 'cpp',
-        'Java': 'java',
-        'Python': 'py'
+        'c++': 'cpp',
+        'java': 'java',
+        'python': 'py'
         }
 
 info_dict = {}
@@ -60,7 +66,7 @@ def get_test_points(data_dir):
 
 def j_compile(file_type, file_path, content):
     with open(file_path + 'Main.' + file_type, 'w') as src_file:
-        src_file.write(config_dict['content'])
+        src_file.write(content)
     compile_result = run(get_compile_cmd(file_type, file_path), stdout=PIPE, stderr=STDOUT)
     if compile_result.returncode != 0:
         return False, compile_result.stdout.decode('utf-8')
@@ -73,11 +79,12 @@ def j_execute(test, file_type, file_path, timeout):
     with open(test + '.in', 'r') as testin:
         try:
             stdin = testin.read()
-            runtime_result = run(get_exec_cmd(file_type, file_path)), stdin=stdin, stdout=PIPE, stderr=PIPE, timeout=timeout)
+            runtime_result = run(get_exec_cmd(file_type, file_path), input=stdin.encode('utf-8'), stdout=PIPE, stderr=PIPE, timeout=timeout)
+            # print(runtime_result)
             if runtime_result.returncode == 0:
-                return 0, stdin, runtime_result.stdout, ''
+                return 0, stdin, runtime_result.stdout.decode('utf-8'), ''
             else:
-                return 1, stdin, '', runtime_result.stderr
+                return 1, stdin, '', runtime_result.stderr.decode('utf-8')
         except TimeoutExpired:
             return 2, stdin, '', ''
 
@@ -287,6 +294,7 @@ def save_new_data(new_data):
     return {'testStatus': 'Rejected'}
 
 if __name__ == '__main__':
+    print(judge(test_config_2))
     pass
     # print(judge_impl(test_config))
     # print(get_prob_list())
