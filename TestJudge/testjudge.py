@@ -11,14 +11,37 @@ from difflib import SequenceMatcher
 
 test_config = {
         'language': 'java',
-        'probinfo': 'test',
-        'content': 'public class main{public static void main(string[] args){for(;;);}}'
+        'probInfo': 'test',
+        'content': 'public class Main{public static void main(String[] args){for(;;);}}'
         }
 
 test_config_2 = {
         'language': 'c++',
         'probInfo': 'test',
         'content': '#include <iostream>\n int main() { int a, b; std::cin >> a >> b; std::cout << a + b; return 0; }'
+        }
+
+beat_test_config = {
+        'probInfo': 'test',
+        'language': ['java', 'c++'],
+        'content': [ '''
+            import java.util.Scanner; 
+            public class Main { 
+                public static void main(String[] args) {
+                    Scanner sc = new Scanner(System.in); 
+                    int a = sc.nextInt(); 
+                    System.out.println(a+sc.nextInt());
+                }
+            }
+            ''',
+            '''#include <iostream>
+            int main() { 
+                int a, b; 
+                std::cin >> a >> b; 
+                std::cout << a + b; 
+                return 0; 
+            }
+            ''' ]
         }
 
 file_type_list = {
@@ -54,7 +77,7 @@ def get_exec_cmd(file_type, file_path, file_name = 'Main'):
         return [file_path + file_name]
     elif file_type == 'java':
         return ['java', '-cp', file_path, file_name]
-    elif file_name == 'py':
+    elif file_type == 'py':
         return ['python3', file_path + file_name + '.py']
     else:
         return []
@@ -73,20 +96,17 @@ def j_compile(file_type, file_path, content):
     else:
         return True, ''
 
-def j_execute(test, file_type, file_path, timeout):
+def j_execute(file_type, file_path, stdin, timeout):
     if file_type == 'java':
         timeout += 2
-    with open(test + '.in', 'r') as testin:
-        try:
-            stdin = testin.read()
-            runtime_result = run(get_exec_cmd(file_type, file_path), input=stdin.encode('utf-8'), stdout=PIPE, stderr=PIPE, timeout=timeout)
-            # print(runtime_result)
-            if runtime_result.returncode == 0:
-                return 0, stdin, runtime_result.stdout.decode('utf-8'), ''
-            else:
-                return 1, stdin, '', runtime_result.stderr.decode('utf-8')
-        except TimeoutExpired:
-            return 2, stdin, '', ''
+    try:
+        runtime_result = run(get_exec_cmd(file_type, file_path), input=stdin, stdout=PIPE, timeout=timeout)
+        if runtime_result.returncode == 0:
+            return 0, runtime_result.stdout.decode('utf-8')
+        else:
+            return 1, ''
+    except TimeoutExpired:
+        return 2, ''
 
 def basic_diff(text1, text2, *args):
     text1 = '\n'.join(map(lambda s : s.rstrip(), text1.splitlines())).rstrip()
@@ -95,6 +115,7 @@ def basic_diff(text1, text2, *args):
     return SequenceMatcher(None, text1, text2).ratio() == 1.0
     # return text1 == text2
 
+# NOTE Untested:
 def real_diff(text1, text2, precision):
     seq1 = list(map(float, text1.split()))
     seq2 = list(map(float, text2.split()))
@@ -113,158 +134,143 @@ judge_dict = {
         'spj': None
         }
 
+def judge_impl(config_dict, file_path):
+    response = {'runtimeStatus': 'AC'}
+    file_type = file_type_list[config_dict['language']]
+    problem = config_dict['probInfo']
+    data_dir = 'data/%s/' % problem
+    timeout = int(info_dict[problem]['timeout'])
+
+    compile_flag, compile_message = j_compile(file_type, file_path, config_dict['content'])
+    if not compile_flag:
+        response['runtimeStatus'] = 'CE'
+        response['compileInfo'] = compile_message
+        return response
+
+    test_list = get_test_points(data_dir)
+    test_points = len(test_list)
+    passed_points = 0
+    for test in test_list:
+        stdin = ''
+        with open(test + '.in', 'r') as testin:
+            stdin = testin.read()
+        status, stdout = j_execute(file_type, file_path, stdin.encode('utf-8'), timeout)
+        with open(test + '.out', 'r') as testout:
+            stdans = testout.read()
+            if status == 0:
+                if info_dict[problem]['method'] == 'spj':
+                    pass # TODO Special judge
+                else:
+                    if judge_dict[info_dict[problem]['method']](stdout, stdans, info_dict[problem]['precision']):
+                        passed_points += 1
+                    else:
+                        response['runtimeStatus'] = 'WA'
+                        response['expectedOutput'] = stdans
+                        response['actualOutput'] = stdout
+            else:
+                if status == 1:
+                    response['runtimeStatus'] = 'RE'
+                else:
+                    response['runtimeStatus'] = 'TLE'
+                response['testData'] = stdin
+                response['expectedOutput'] = stdans
+                response['actualOutput'] = ''
+                break
+    response['passedRatioPercent'] = passed_points * 100 // test_points
+    return response
+
+def check_data(data_dir, data_type):
+    data = data_dir + 'Data'
+    if data_type == 'java':
+        data += '.class'
+    elif data_type == 'py':
+        data += '.py'
+    if isfile(data):
+        return True
+    else:
+        return False
+
+def beat_impl(config_dict, file_path, cases_num):
+    response = {'runtimeStatus': ['N/A', 'N/A']}
+    problem = config_dict['probInfo']
+    data_dir = 'data/%s/' % problem
+    timeout = int(info_dict[problem]['timeout'])
+    file_type = list(map(lambda f : file_type_list[f], config_dict['language']))
+    data_type = file_type_list[info_dict[problem]['data_type']]
+    if not check_data(data_dir, data_type):
+        response['errorMessage'] = 'Data generator not found!'
+        return response
+
+    os.mkdir(file_path + '0/')
+    os.mkdir(file_path + '1/')
+    compile_flag_0, compile_message_0 = j_compile(file_type[0], file_path + '0/', config_dict['content'][0])
+    compile_flag_1, compile_message_1 = j_compile(file_type[1], file_path + '1/', config_dict['content'][1])
+    compile_messages = ['', '']
+    if not compile_flag_0:
+        response['runtimeStatus'][0] == 'CE'
+        compile_messages[0] = compile_message_0
+    if not compile_flag_1:
+        response['runtimeStatus'][1] == 'CE'
+        compile_messages[1] = compile_message_1
+
+    if compile_flag_0 and compile_flag_1:
+        for i in range(cases_num):
+            test_data = run(get_exec_cmd(data_type, data_dir, 'Data'), stdout=PIPE).stdout
+            status_0, stdout_0 = j_execute(file_type[0], file_path + '0/', test_data, timeout)
+            status_1, stdout_1 = j_execute(file_type[1], file_path + '1/', test_data, timeout)
+            if status_0 == 0 and status_1 == 0:
+                if not judge_dict[info_dict[problem]['method']](stdout_0, stdout_1, info_dict[problem]['precision']):
+                    response['runtimeStatus'] = ['DIFF', 'DIFF']
+                    response['testData'] = stdin
+                    response['outputs'] = [stdout_0, stdout_1]
+                    break
+            else:
+                if status_0 == 1:
+                    response['runtimeStatus'][0] = 'RE'
+                elif status_0 == 2:
+                    response['runtimeStatus'][0] = 'TLE'
+                if status_1 == 1:
+                    response['runtimeStatus'][1] = 'RE'
+                elif status_1 == 2:
+                    response['runtimeStatus'][1] = 'TLE'
+                break
+
+    if response['runtimeStatus'] == ['N/A', 'N/A']:
+        response['runtimeStatus'] = ['IDT', 'IDT']
+    return response
+
 def judge(config_dict):
     global info_dict
     update_info()
 
     serial = get_serial()
-    response = {'runtimeStatus': 'AC'}
-    file_type = file_type_list[config_dict['language']]
     file_path = 'run/%s/' % serial
-    problem = config_dict['probInfo']
-    data_dir = 'data/%s/' % problem
-    timeout = int(info_dict[problem]['timeout'])
-
     os.mkdir(file_path)
-    compile_flag, compile_message = j_compile(file_type, file_path, config_dict['content'])
-    if compile_flag:
-        test_list = get_test_points(data_dir)
-        test_points = len(test_list)
-        passed_points = 0
-        for test in test_list:
-            status, stdin, stdout, stderr = j_execute(test, file_type, file_path, timeout)
-            with open(test + '.out', 'r') as testout:
-                stdans = testout.read()
-                if status == 0:
-                    if info_dict[problem]['method'] == 'spj':
-                        pass # TODO Special judge
-                    else:
-                        diff_flag = judge_dict[info_dict[problem]['method']](stdout, stdans, info_dict[problem]['precision'])
-                        if diff_flag:
-                            passed_points += 1
-                        else:
-                            response['runtimeStatus'] = 'WA'
-                            response['expectedOutput'] = stdans
-                            response['actualOutput'] = stdout
-                else:
-                    if status == 1:
-                        response['runtimeStatus'] = 'RE'
-                    else:
-                        response['runtimeStatus'] = 'TLE'
-                    response['testData'] = stdin
-                    response['expectedOutput'] = stdans
-                    response['actualOutput'] = ''
-                    break
-        response['passedRatioPercent'] = passed_points * 100 // test_points
-
-    else:
-        response['runtimeStatus'] = 'CE'
-        response['compileInfo'] = compile_message
-
-    shutil.rmtree(file_path)
-    return response
+    response = {}
+    try:
+        return judge_impl(config_dict, file_path)
+    except:
+        return {'runtimeStatus': 'UE'}
+    finally:
+        shutil.rmtree(file_path)
 
 def beat_std(config_dict, cases_num = 20):
     pass # TODO
 
-def beat(config_dict_1, config_dict_2, cases_num = 20):
-    pass # TODO
+def beat(config_dict, cases_num = 20):
+    global info_dict
+    update_info()
 
-'''
-
-def execute(data_dir, test_file, file_type, file_path, timeout):
-    result = {}
-    std_file = file_path + 'std.out'
-    user_file = file_path + 'user.out'
-    with open(test_file, 'r') as testdata, open(std_file, 'w') as std_output:
-        run([data_dir + 'std'], stdin=testdata, stdout=std_output, timeout=timeout)
-    with open (test_file, 'r') as testdata, open(user_file, 'w') as user_output:
-        add_time = 0
-        if file_type == 'java':
-            add_time = 2
-        try:
-            runtime = run(get_exec_cmd(file_type, file_path), stdin=testdata, stdout=user_output, timeout=timeout+add_time)
-            if runtime.returncode != 0:
-                result['runtimeStatus'] = 'RE'
-            else:
-                diff_status = run(['diff', '-Bbw', std_file, user_file], stdout=PIPE)
-                if diff_status.returncode != 0:
-                    result['runtimeStatus'] = 'WA'
-        except TimeoutExpired:
-            result['runtimeStatus'] = 'TLE'
-    if result:
-        with open(test_file, 'r') as testdata, open(std_file, 'r') as std_output, open(user_file, 'r') as user_output:
-            result['testData'] = testdata.read()
-            result['expectedOutput'] = std_output.read()
-            result['actualOutput'] = user_output.read()
-    return result
-
-def save_data(data_dir, data):
-    test_no = 1 + len([f for f in os.listdir(data_dir) if isfile(join(data_dir, f)) and f[-3:] == '.in'])
-    with open(data_dir + 'data%d.in' % test_no, 'w') as new_test:
-        new_test.write(data)
-
-def judge_impl(config_dict, random_points=20):
-    # Initialize
     serial = get_serial()
-    response = {'runtimeStatus': 'AC'}
-    file_type = file_type_list[config_dict['language']]
     file_path = 'run/%s/' % serial
-    file_name = 'Main.' + file_type
-    data_dir = 'data/%s/' % config_dict['probInfo']
-    test_points = 0
-    passed_points = 0
-    timeout = 1
-    with open('info.json', 'r') as f_info:
-        timeout = int(json.loads(f_info.read())[config_dict['probInfo']]['timeout'])
-
-    # Compile
     os.mkdir(file_path)
-    with open(file_path + file_name, 'w') as src_file:
-        src_file.write(config_dict['content'])
-    compile_status = run(get_compile_cmd(file_type, file_path), stdout=PIPE, stderr=STDOUT)
-    if compile_status.returncode != 0:
-        response['runtimeStatus'] = 'CE'
-        response['compileInfo'] = compile_status.stdout.decode('utf-8')
-        return response
-
-    # Saved data
-    test_files = [f for f in os.listdir(data_dir) if isfile(join(data_dir, f)) and f[-3:] == '.in']
-    test_files_cnt = len(test_files)
-    test_points = test_files_cnt
-    for test_file in test_files:
-        result = execute(data_dir, join(data_dir, test_file), file_type, file_path, timeout)
-        if result:
-            response.update(result)
-            break
-        passed_points += 1
-
-    # Random data
-    if passed_points == test_points and isfile(data_dir + 'data.py'):
-        test_points += random_points
-        for i in range(random_points):
-            test_file = file_path + 'test.in'
-            with open(test_file, 'w') as testdata:
-                run(['python3', data_dir + 'data.py'], stdout=testdata)
-            result = execute(data_dir, test_file, file_type, file_path, timeout)
-            if result:
-                response.update(result)
-                save_data(data_dir, result['testData'])
-                break
-            passed_points += 1
-
-    # Return
-    response['passedRatioPercent'] = passed_points * 100 // test_points
-    return response
-
-def judge(config_dict, random_points=20):
+    response = {}
     try:
-        return judge_impl(config_dict, random_points, False)
-    except:
-        return {'runtimeStatus': 'UE'}
-        # raise
-
-'''
+        return beat_impl(config_dict, file_path, cases_num)
+    # except:
+        # return {'runtimeStatus': ['UE', 'UE']}
+    finally:
+        shutil.rmtree(file_path)
 
 def get_prob_list():
     try:
@@ -294,9 +300,4 @@ def save_new_data(new_data):
     return {'testStatus': 'Rejected'}
 
 if __name__ == '__main__':
-    print(judge(test_config_2))
-    pass
-    # print(judge_impl(test_config))
-    # print(get_prob_list())
-    # print(save_new_data({'probInfo': 'test', 'in': '1 3', 'out': '4'}))
-    # print(save_new_data({'probInfo': 'test', 'in': '1 3', 'out': 'Hello'}))
+    print(beat(beat_test_config))

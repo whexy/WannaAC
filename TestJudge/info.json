@@ -5,6 +5,6 @@
         "method": "diff",
         "precision": 0,
         "std_type": null,
-        "data_type": null
+        "data_type": "python"
     }
 }
